@@ -87,8 +87,9 @@ class BucketManager:
         scoring = config.get("scoring_weights", {})
         self.w_topic = scoring.get("topic_relevance", 4.0)
         self.w_emotion = scoring.get("emotion_resonance", 2.0)
-        self.w_time = scoring.get("time_proximity", 1.5)
+        self.w_time = scoring.get("time_proximity", 2.5)
         self.w_importance = scoring.get("importance", 1.0)
+        self.content_weight = scoring.get("content_weight", 3.0)  # Added to allow better content-based matching during merge
 
     # ---------------------------------------------------------
     # Create a new bucket
@@ -573,9 +574,9 @@ class BucketManager:
             )
             * 2
         )
-        content_score = fuzz.partial_ratio(query, bucket.get("content", "")[:500]) * 1
+        content_score = fuzz.partial_ratio(query, bucket.get("content", "")[:1000]) * self.content_weight
 
-        return (name_score + domain_score + tag_score + content_score) / (100 * 8.5)
+        return (name_score + domain_score + tag_score + content_score) / (100 * 10.5)
 
     # ---------------------------------------------------------
     # Emotion resonance sub-score:
@@ -619,7 +620,7 @@ class BucketManager:
             days = max(0.0, (datetime.now() - last_active).total_seconds() / 86400)
         except (ValueError, TypeError):
             days = 30
-        return math.exp(-0.02 * days)
+        return math.exp(-0.1 * days)
 
     # ---------------------------------------------------------
     # List all buckets

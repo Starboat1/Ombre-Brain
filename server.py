@@ -90,6 +90,43 @@ async def health_check(request):
 
 
 # =============================================================
+# /breath-hook endpoint: Dedicated hook for SessionStart
+# 会话启动专用挂载点
+# =============================================================
+@mcp.custom_route("/breath-hook", methods=["GET"])
+async def breath_hook(request):
+    from starlette.responses import PlainTextResponse
+    try:
+        all_buckets = await bucket_mgr.list_all(include_archive=False)
+        # pinned
+        pinned = [b for b in all_buckets if b["metadata"].get("pinned") or b["metadata"].get("protected")]
+        # top 2 unresolved by score
+        unresolved = [b for b in all_buckets
+                      if not b["metadata"].get("resolved", False)
+                      and b["metadata"].get("type") != "permanent"
+                      and not b["metadata"].get("pinned")
+                      and not b["metadata"].get("protected")]
+        scored = sorted(unresolved, key=lambda b: decay_engine.calculate_score(b["metadata"]), reverse=True)
+        top = scored[:2]
+
+        parts = []
+        for b in pinned:
+            summary = await dehydrator.dehydrate(b["content"], {k: v for k, v in b["metadata"].items() if k != "tags"})
+            parts.append(f"📌 [核心准则] {summary}")
+        for b in top:
+            summary = await dehydrator.dehydrate(b["content"], {k: v for k, v in b["metadata"].items() if k != "tags"})
+            await bucket_mgr.touch(b["id"])
+            parts.append(summary)
+
+        if not parts:
+            return PlainTextResponse("")
+        return PlainTextResponse("[Ombre Brain - 记忆浮现]\n" + "\n---\n".join(parts))
+    except Exception as e:
+        logger.warning(f"Breath hook failed: {e}")
+        return PlainTextResponse("")
+
+
+# =============================================================
 # Internal helper: merge-or-create
 # 内部辅助：检查是否可合并，可以则合并，否则新建
 # Shared by hold and grow to avoid duplicate logic
@@ -111,7 +148,7 @@ async def _merge_or_create(
     返回 (桶ID或名称, 是否合并)。
     """
     try:
-        existing = await bucket_mgr.search(content, limit=1)
+        existing = await bucket_mgr.search(content, limit=1, domain_filter=domain or None)
     except Exception as e:
         logger.warning(f"Search for merge failed, creating new / 合并搜索失败，新建: {e}")
         existing = []
@@ -186,7 +223,8 @@ async def breath(
         pinned_results = []
         for b in pinned_buckets:
             try:
-                summary = await dehydrator.dehydrate(b["content"], b["metadata"])
+                clean_meta = {k: v for k, v in b["metadata"].items() if k != "tags"}
+                summary = await dehydrator.dehydrate(b["content"], clean_meta)
                 pinned_results.append(f"📌 [核心准则] {summary}")
             except Exception as e:
                 logger.warning(f"Failed to dehydrate pinned bucket / 钉选桶脱水失败: {e}")
@@ -211,7 +249,8 @@ async def breath(
         dynamic_results = []
         for b in top:
             try:
-                summary = await dehydrator.dehydrate(b["content"], b["metadata"])
+                clean_meta = {k: v for k, v in b["metadata"].items() if k != "tags"}
+                summary = await dehydrator.dehydrate(b["content"], clean_meta)
                 await bucket_mgr.touch(b["id"])
                 score = decay_engine.calculate_score(b["metadata"])
                 dynamic_results.append(f"[权重:{score:.2f}] {summary}")
@@ -249,7 +288,8 @@ async def breath(
     results = []
     for bucket in matches:
         try:
-            summary = await dehydrator.dehydrate(bucket["content"], bucket["metadata"])
+            clean_meta = {k: v for k, v in bucket["metadata"].items() if k != "tags"}
+            summary = await dehydrator.dehydrate(bucket["content"], clean_meta)
             await bucket_mgr.touch(bucket["id"])
             results.append(summary)
         except Exception as e:
@@ -271,7 +311,8 @@ async def breath(
                 drifted = random.sample(low_weight, min(random.randint(1, 3), len(low_weight)))
                 drift_results = []
                 for b in drifted:
-                    summary = await dehydrator.dehydrate(b["content"], b["metadata"])
+                    clean_meta = {k: v for k, v in b["metadata"].items() if k != "tags"}
+                    summary = await dehydrator.dehydrate(b["content"], clean_meta)
                     drift_results.append(f"[surface_type: random]\n{summary}")
                 results.append("--- 忽然想起来 ---\n" + "\n---\n".join(drift_results))
         except Exception as e:

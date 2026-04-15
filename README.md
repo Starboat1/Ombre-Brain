@@ -166,8 +166,8 @@ Claude ←→ MCP Protocol ←→ server.py
 ### 步骤 / Steps
 
 ```bash
-git clone https://github.com/P0lar1zzZ/Ombre-Brain.git
-cd Ombre-Brain
+git clone https://git.p0lar1s.uk/P0lar1s/Ombre_Brain.git
+cd Ombre_Brain
 
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate

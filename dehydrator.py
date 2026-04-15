@@ -193,21 +193,8 @@ class Dehydrator:
         if count_tokens_approx(content) < 100:
             return self._format_output(content, metadata)
 
-        # --- Try API compression first (best quality) ---
-        # --- 优先尝试 API 压缩 ---
-        if self.api_available:
-            try:
-                result = await self._api_dehydrate(content)
-                if result:
-                    return self._format_output(result, metadata)
-            except Exception as e:
-                logger.warning(
-                    f"API dehydration failed, degrading to local / "
-                    f"API 脱水失败，降级到本地压缩: {e}"
-                )
-
-        # --- Local compression fallback (works without API) ---
-        # --- 本地压缩兜底 ---
+        # --- Local compression (Always used as requested) ---
+        # --- 本地压缩 ---
         result = self._local_dehydrate(content)
         return self._format_output(result, metadata)
 
@@ -322,9 +309,10 @@ class Dehydrator:
         # --- Top-8 sentences + keyword list / 取高分句 + 关键词列表 ---
         selected = [s for _, s in scored[:8]]
         summary = "。".join(selected)
-        keyword_str = ", ".join(keywords[:10])
-
-        return f"[摘要] {summary}\n[关键词] {keyword_str}"
+        
+        if len(summary) > 1000:
+            summary = summary[:1000] + "…"
+        return summary
 
     # ---------------------------------------------------------
     # Local merge (simple concatenation + truncation)
@@ -393,7 +381,6 @@ class Dehydrator:
         header = ""
         if metadata and isinstance(metadata, dict):
             name = metadata.get("name", "未命名")
-            tags = ", ".join(metadata.get("tags", []))
             domains = ", ".join(metadata.get("domain", []))
             try:
                 valence = float(metadata.get("valence", 0.5))
@@ -403,10 +390,10 @@ class Dehydrator:
             header = f"📌 记忆桶: {name}"
             if domains:
                 header += f" [主题:{domains}]"
-            if tags:
-                header += f" [标签:{tags}]"
             header += f" [情感:V{valence:.1f}/A{arousal:.1f}]"
             header += "\n"
+        
+        content = re.sub(r'\[\[([^\]]+)\]\]', r'\1', content)
         return f"{header}{content}"
 
     # ---------------------------------------------------------
